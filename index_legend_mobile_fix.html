@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Malta Long Weekend Map (18–21 June)</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+:root{
+  --bg:#0b0c10; --panel:#111218; --text:#e8e8ea; --muted:#a8acb3;
+  --border:rgba(255,255,255,.10); --shadow:0 14px 40px rgba(0,0,0,.35);
+  --sans: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text)}
+
+.top{padding:14px;border-bottom:1px solid var(--border)}
+h1{margin:0 0 6px;font-size:16px}
+.sub{margin:0;color:var(--muted);font-size:13px}
+
+.controls{padding:12px 14px;border-bottom:1px solid var(--border);background:var(--panel)}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.helper{margin:6px 0 0;color:var(--muted);font-size:12px}
+
+input[type=text]{
+  width:100%;padding:10px;border-radius:12px;
+  border:1px solid var(--border);background:rgba(0,0,0,.25);color:var(--text)
+}
+
+.pill{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:6px 10px;border-radius:999px;
+  border:1px solid var(--border);background:rgba(0,0,0,.22);
+  font-size:12px;cursor:pointer
+}
+
+.meta{margin-top:10px;display:flex;gap:10px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+
+#map{height:calc(100vh - 220px);height:calc(100dvh - 220px);width:100%}
+
+/* Legend */
+.map-legend{
+  background:rgba(17,18,24,.92);border:1px solid var(--border);
+  border-radius:12px;padding:10px;font-size:12px;box-shadow:var(--shadow);
+  max-width: 240px;
+}
+.legend-row{display:flex;align-items:center;gap:8px;margin:6px 0}
+.legend-dot{width:10px;height:10px;border-radius:999px;display:inline-block}
+.popup a{color:#7dd3fc;text-decoration:none}
+
+/* --- MOBILE FIX: prevent bottom controls from being clipped by iOS Safari UI --- */
+.leaflet-control{
+  margin: 10px !important;
+}
+
+/* add safe-area padding */
+.leaflet-bottom .leaflet-control{
+  margin-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* extra buffer on small screens (Safari bottom bar can overlap) */
+@media (max-width: 700px){
+  .leaflet-bottom .leaflet-control{
+    margin-bottom: calc(10px + env(safe-area-inset-bottom, 0px) + 64px) !important;
+  }
+  .map-legend{
+    max-height: 45vh; /* if expanded, it scrolls instead of clipping */
+    overflow:auto;
+  }
+}
+</style>
+</head>
+
+<body>
+<div class="top">
+  <h1>Malta long weekend map</h1>
+  <p class="sub">18–21 June • search or filter, then tap pins</p>
+</div>
+
+<div class="controls">
+  <label>Search</label>
+  <input id="q" type="text" placeholder="food, coffee, beach, Valletta…"/>
+  <p class="helper">Try “food”, “coffee”, or “food coffee”.</p>
+
+  <div style="height:10px"></div>
+  <div class="row" id="filters"></div>
+
+  <div class="meta">
+    <span id="count">Showing 0 places</span>
+    <span>Hotel: InterContinental by IHG</span>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+const BASE={name:"InterContinental by IHG, Malta",lat:35.9237893,lng:14.4882933};
+
+const CATEGORIES=[
+ {id:"beach",label:"Beaches",color:"#60a5fa",icon:"🏖️"},
+ {id:"history",label:"Historical",color:"#34d399",icon:"🏛️"},
+ {id:"mustsee",label:"Must-see",color:"#fbbf24",icon:"✨"},
+ {id:"dinner",label:"Dinner",color:"#fb7185",icon:"🍽️"},
+ {id:"lunch",label:"Lunch",color:"#a78bfa",icon:"🥪"},
+ {id:"breakfast",label:"Breakfast",color:"#f472b6",icon:"☕"},
+];
+
+const PLACES=[
+ {name:"Golden Bay",category:"beach",lat:35.93387,lng:14.34446,note:"Classic sandy bay."},
+ {name:"Għajn Tuffieħa Bay",category:"beach",lat:35.92920,lng:14.34280,note:"Scenic quieter bay."},
+ {name:"St George’s Bay",category:"beach",lat:35.92599,lng:14.48783,note:"Closest beach to hotel."},
+
+ {name:"Mdina",category:"history",lat:35.88583,lng:14.40306,note:"Medieval walled city."},
+ {name:"St John’s Co-Cathedral",category:"history",lat:35.89780,lng:14.51250,note:"Baroque cathedral."},
+
+ {name:"Upper Barrakka Gardens",category:"mustsee",lat:35.89519,lng:14.51243,note:"Harbour views."},
+ {name:"Spinola Bay Promenade",category:"mustsee",lat:35.91925,lng:14.49024,note:"Evening stroll."},
+
+ {name:"Gululu",category:"dinner",lat:35.91964,lng:14.49098,note:"Classic Maltese food."},
+ {name:"Ta’ Kris",category:"dinner",lat:35.90905,lng:14.50643,note:"Traditional Maltese."},
+
+ {name:"Nenu the Artisan Baker",category:"lunch",lat:35.89905,lng:14.51638,note:"Famous ftira."},
+ {name:"Zeri’s",category:"lunch",lat:35.92102,lng:14.49211,note:"Casual local lunch."},
+
+ {name:"Cafe Cuba",category:"breakfast",lat:35.91975,lng:14.49041,note:"Local café by bay."},
+ {name:"LOT61 Coffee",category:"breakfast",lat:35.89785,lng:14.51416,note:"Specialty coffee."},
+];
+
+function icon(color,emoji){
+ const svg=`<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 64 64'>
+ <path d='M32 2C20 2 11 11 11 23c0 17 21 39 21 39s21-22 21-39C53 11 44 2 32 2z'
+ fill='${color}' stroke='white' stroke-width='2'/>
+ <text x='32' y='30' text-anchor='middle' font-size='18'>${emoji}</text>
+ </svg>`;
+ return L.icon({iconUrl:"data:image/svg+xml;utf8,"+encodeURIComponent(svg),
+   iconSize:[32,32],iconAnchor:[16,32],popupAnchor:[0,-28]});
+}
+const ICONS=Object.fromEntries(CATEGORIES.map(c=>[c.id,icon(c.color,c.icon)]));
+
+const map=L.map("map").setView([BASE.lat,BASE.lng],13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19}).addTo(map);
+L.marker([BASE.lat,BASE.lng]).addTo(map).bindPopup("<b>InterContinental by IHG</b>");
+
+const layers=Object.fromEntries(CATEGORIES.map(c=>[c.id,L.layerGroup().addTo(map)]));
+
+// smart search
+const STOP=new Set(["and","or","the","a","to","for"]);
+const ALIAS={ food:["lunch","dinner"], restaurant:["lunch","dinner"], coffee:["breakfast"], cafe:["breakfast"], cafes:["breakfast"], caffe:["breakfast"], "caffè":["breakfast"] };
+
+let activeCats=new Set(CATEGORIES.map(c=>c.id));
+
+function matches(p,q){
+ if(!activeCats.has(p.category)) return false;
+ if(!q) return true;
+ const tokens=q.split(/\s+/).map(t=>t.toLowerCase()).filter(t=>t && !STOP.has(t));
+ const cats=new Set();
+ tokens.forEach(t=>ALIAS[t]?.forEach(c=>cats.add(c)));
+ if(cats.size && cats.has(p.category)) return true;
+ const hay=(p.name+" "+p.note).toLowerCase();
+ return tokens.some(t=>hay.includes(t));
+}
+
+function refresh(){
+ Object.values(layers).forEach(l=>l.clearLayers());
+ const q=document.getElementById("q").value.trim();
+ let shown=0;
+ const visible=[];
+ PLACES.forEach(p=>{
+   if(matches(p,q)){
+     const url=`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name+' Malta')}`;
+     const m=L.marker([p.lat,p.lng],{icon:ICONS[p.category]})
+       .bindPopup(`<b>${p.name}</b><br>${p.note}<br><a target="_blank" rel="noopener" href="${url}">Open in Google Maps</a>`);
+     layers[p.category].addLayer(m);
+     visible.push([p.lat,p.lng]);
+     shown++;
+   }
+ });
+ document.getElementById("count").textContent=`Showing ${shown} places`;
+ if(visible.length) map.fitBounds([ [BASE.lat,BASE.lng], ...visible ],{padding:[40,40]});
+}
+
+document.getElementById("q").addEventListener("input",refresh);
+
+// filters
+const filters=document.getElementById("filters");
+CATEGORIES.forEach(c=>{
+ const el=document.createElement("label");
+ el.className="pill";
+ el.innerHTML=`<input type="checkbox" checked data-id="${c.id}"/> ${c.icon} ${c.label}`;
+ el.onchange=e=>{
+   const id=e.target.dataset.id;
+   e.target.checked?activeCats.add(id):activeCats.delete(id);
+   refresh();
+ };
+ filters.appendChild(el);
+});
+
+// legend: move to topright on mobile to avoid bottom cut-off
+const legendPos = window.matchMedia("(max-width: 700px)").matches ? "topright" : "bottomright";
+const legend=L.control({position:legendPos});
+legend.onAdd=()=>{
+ const d=L.DomUtil.create("div","map-legend");
+ d.innerHTML=`<b>Legend</b>
+ <div class="legend-row"><span class="legend-dot" style="background:#fff"></span> Hotel: InterContinental by IHG</div>`+
+ CATEGORIES.map(c=>`<div class="legend-row"><span class="legend-dot" style="background:${c.color}"></span>${c.icon} ${c.label}</div>`).join("");
+ return d;
+};
+legend.addTo(map);
+
+refresh();
+</script>
+</body>
+</html>
