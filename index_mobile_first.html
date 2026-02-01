@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Malta Long Weekend Map (18–21 June)</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <style>
+    :root{
+      --bg:#0b0c10;
+      --panel:#111218;
+      --text:#e8e8ea;
+      --muted:#a8acb3;
+      --border:rgba(255,255,255,.10);
+      --shadow:0 14px 40px rgba(0,0,0,.35);
+      --radius:14px;
+      --pad:14px;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family:var(--sans);
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    /* Mobile-first layout: title -> filters -> map */
+    .top{
+      padding: 14px 14px 10px;
+      border-bottom:1px solid var(--border);
+      background:linear-gradient(180deg, rgba(255,255,255,.06), transparent);
+    }
+    h1{
+      margin:0 0 6px 0;
+      font-size:16px;
+      letter-spacing:.2px;
+    }
+    .sub{
+      margin:0;
+      color:var(--muted);
+      font-size:13px;
+      line-height:1.3;
+    }
+
+    .controls{
+      padding: 12px 14px 14px;
+      border-bottom:1px solid var(--border);
+      background:var(--panel);
+    }
+
+    .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    label{
+      font-size:12px;
+      color:var(--muted);
+    }
+
+    input[type="text"]{
+      width:100%;
+      padding:10px 11px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background:rgba(0,0,0,.25);
+      color:var(--text);
+      outline:none;
+    }
+    input[type="text"]:focus{
+      border-color:rgba(125, 211, 252, .55);
+      box-shadow:0 0 0 4px rgba(125, 211, 252, .10);
+    }
+
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:7px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:rgba(0,0,0,.22);
+      font-size:12px;
+      user-select:none;
+      cursor:pointer;
+    }
+    .pill input{ accent-color:#7dd3fc; }
+
+    .meta{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:10px;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .badge{
+      font-family:var(--mono);
+      font-size:11px;
+      padding:4px 7px;
+      border-radius:8px;
+      border:1px solid var(--border);
+      color:var(--muted);
+      white-space:nowrap;
+      background:rgba(0,0,0,.22);
+    }
+
+    /* Map fills remaining viewport height */
+    #map{
+      height: calc(100vh - 56px - 150px);
+      height: calc(100dvh - 56px - 150px);
+      width:100%;
+    }
+
+    @media (min-width: 900px){
+      .top{ padding:16px 18px 10px; }
+      .controls{ padding:12px 18px 14px; }
+      #map{
+        height: calc(100vh - 64px - 140px);
+        height: calc(100dvh - 64px - 140px);
+      }
+    }
+
+    /* Leaflet legend styling */
+    .map-legend{
+      background: rgba(17,18,24,.92);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 10px;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      line-height: 1.2;
+      min-width: 170px;
+    }
+    .legend-row{ display:flex; align-items:center; gap:8px; margin:6px 0; }
+    .legend-dot{
+      width:10px; height:10px; border-radius:999px; display:inline-block;
+      border: 1px solid rgba(255,255,255,.18);
+    }
+
+    /* Popup link styling */
+    .popup a{ color:#7dd3fc; text-decoration:none; }
+    .popup a:hover{ text-decoration:underline; }
+  </style>
+</head>
+
+<body>
+  <div class="top">
+    <h1>Malta long weekend map</h1>
+    <p class="sub">18–21 June • filter categories, search, then tap markers for details (distance from hotel included)</p>
+  </div>
+
+  <div class="controls">
+    <label for="q">Search</label>
+    <input id="q" type="text" placeholder="Try: ftira, sunset, Valletta, beach..." />
+
+    <div style="height:10px"></div>
+    <div class="row" id="filters"></div>
+
+    <div class="meta">
+      <span class="badge" id="count">0 places shown</span>
+      <span class="badge" id="baseCoords">Hotel: —</span>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+<script>
+  const BASE = {
+    name: "InterContinental Malta (St. Julian’s)",
+    lat: 35.9237893,
+    lng: 14.4882933
+  };
+
+  const CATEGORIES = [
+    { id:"beach",     label:"Beaches",    color:"#60a5fa", icon:"🏖️" },
+    { id:"history",   label:"Historical", color:"#34d399", icon:"🏛️" },
+    { id:"mustsee",   label:"Must-see",   color:"#fbbf24", icon:"✨" },
+    { id:"dinner",    label:"Dinner",     color:"#fb7185", icon:"🍽️" },
+    { id:"lunch",     label:"Lunch",      color:"#a78bfa", icon:"🥪" },
+    { id:"breakfast", label:"Breakfast",  color:"#f472b6", icon:"☕" },
+  ];
+
+  const PLACES = [
+    // Beaches
+    { name:"Golden Bay", category:"beach", lat:35.93387, lng:14.34446,
+      note:"Classic sandy bay with sunsets; facilities and easy access." },
+    { name:"Għajn Tuffieħa Bay", category:"beach", lat:35.92920, lng:14.34280,
+      note:"More scenic/quiet feel than Golden Bay; steps down to the water." },
+    { name:"St. Peter's Pool", category:"beach", lat:35.83290, lng:14.56250,
+      note:"Rocky swimming cove with clear water; bring water shoes." },
+    { name:"St George’s Bay (walkable)", category:"beach", lat:35.92599, lng:14.48783,
+      note:"Nearest sandy bay—perfect for a quick dip without logistics." },
+
+    // Historical
+    { name:"St. John's Co-Cathedral (Valletta)", category:"history", lat:35.89780, lng:14.51250,
+      note:"Baroque masterpiece; famed interior and Caravaggio works." },
+    { name:"Mdina (the Silent City)", category:"history", lat:35.88583, lng:14.40306,
+      note:"Walled medieval city; best for late afternoon + evening stroll." },
+    { name:"Ħaġar Qim Temples", category:"history", lat:35.82747, lng:14.44185,
+      note:"Prehistoric megalithic temples (UNESCO complex nearby)." },
+    { name:"Spinola Palace (walkable)", category:"history", lat:35.92070, lng:14.49094,
+      note:"Baroque palace overlooking Spinola Bay; a local landmark." },
+
+    // Must-see
+    { name:"Upper Barrakka Gardens", category:"mustsee", lat:35.89519, lng:14.51243,
+      note:"Grand Harbour panorama—excellent at golden hour." },
+    { name:"Blue Lagoon (Comino)", category:"mustsee", lat:36.01412, lng:14.32421,
+      note:"Iconic turquoise swim day—go early to beat crowds." },
+    { name:"Dingli Cliffs Viewpoint", category:"mustsee", lat:35.84142, lng:14.39846,
+      note:"High cliffs and big horizons—great for sunset." },
+    { name:"Spinola Bay Promenade (walkable)", category:"mustsee", lat:35.91925, lng:14.49024,
+      note:"Seaside stroll with traditional boats, sunset views, and bar terraces." },
+
+    // Dinner
+    { name:"Rubino (Valletta)", category:"dinner", lat:35.89922, lng:14.51206,
+      note:"Historic favourite for refined Maltese/Mediterranean. Book ahead." },
+    { name:"Legligin (Valletta)", category:"dinner", lat:35.89923, lng:14.51185,
+      note:"Tasting menu with local/seasonal lean; good wine pairing culture." },
+    { name:"Ta' Kris (Gżira)", category:"dinner", lat:35.90905, lng:14.50643,
+      note:"Traditional Maltese classics; easy group dinner choice." },
+    { name:"Gululu (walkable)", category:"dinner", lat:35.919643, lng:14.490978,
+      note:"Go-to for Maltese classics (rabbit, bragioli, local mains) near Spinola." },
+
+    // Lunch
+    { name:"Nenu the Artisan Baker (Valletta)", category:"lunch", lat:35.89905, lng:14.51638,
+      note:"Known for Maltese ftira—excellent casual lunch." },
+    { name:"Tartarun (Marsaxlokk)", category:"lunch", lat:35.84145, lng:14.54540,
+      note:"Harbour seafood lunch in a traditional fishing village." },
+    { name:"Crystal Palace (Is-Serkin), Rabat", category:"lunch", lat:35.88455, lng:14.40053,
+      note:"Pastizzi institution—fast, cheap, extremely local." },
+    { name:"Zeri’s (walkable)", category:"lunch", lat:35.92102, lng:14.49211,
+      note:"Long-standing local favourite for a casual lunch and seafood staples." },
+
+    // Breakfast
+    { name:"Caffe Cordina (Valletta)", category:"breakfast", lat:35.89872, lng:14.51321,
+      note:"Iconic historic café for pastries, coffee, and a classic setting." },
+    { name:"LOT61 Coffee Roasters (Valletta)", category:"breakfast", lat:35.89785, lng:14.51416,
+      note:"Specialty espresso + good beans if you’re coffee people." },
+    { name:"Manouche (Valletta, St John’s Square)", category:"breakfast", lat:35.89746, lng:14.51230,
+      note:"Bakery-café for pastries and a quick breakfast." },
+    { name:"Cafe Cuba (walkable)", category:"breakfast", lat:35.919754, lng:14.490413,
+      note:"Classic Maltese café by Spinola Bay—easy morning coffee + pastries." },
+  ];
+
+  // Distance (straight-line)
+  const toRad = (deg) => deg * Math.PI / 180;
+  function haversineKm(lat1,lng1,lat2,lng2){
+    const R = 6371;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat/2)**2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  }
+  function kmToBase(p){
+    return haversineKm(BASE.lat, BASE.lng, p.lat, p.lng);
+  }
+
+  // Marker icons: colored SVG pin with emoji
+  function svgIcon(color, emoji){
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="44" height="44" viewBox="0 0 64 64">
+        <path d="M32 2C20.4 2 11 11.4 11 23c0 16.7 21 39 21 39s21-22.3 21-39C53 11.4 43.6 2 32 2z"
+              fill="${color}" stroke="rgba(255,255,255,.35)" stroke-width="2"/>
+        <circle cx="32" cy="24" r="15" fill="rgba(0,0,0,.15)"/>
+        <text x="32" y="30" text-anchor="middle" font-size="18">${emoji}</text>
+      </svg>`;
+    const url = "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg.trim());
+    return L.icon({
+      iconUrl: url,
+      iconSize: [34, 34],
+      iconAnchor: [17, 33],
+      popupAnchor: [0, -28]
+    });
+  }
+  const iconByCat = Object.fromEntries(
+    CATEGORIES.map(c => [c.id, svgIcon(c.color, c.icon)])
+  );
+
+  // Map init
+  const map = L.map("map", { scrollWheelZoom:true }).setView([BASE.lat, BASE.lng], 13);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // Base marker
+  L.marker([BASE.lat, BASE.lng]).addTo(map).bindPopup(
+    `<div class="popup"><b>${BASE.name}</b><br/>Base point for distances.<br/><span style="color:#666;font-size:12px">${BASE.lat.toFixed(6)}, ${BASE.lng.toFixed(6)}</span></div>`
+  );
+
+  // Layer groups per category (for filtering)
+  const layers = Object.fromEntries(CATEGORIES.map(c => [c.id, L.layerGroup().addTo(map)]));
+
+  function gmapsLinks(p){
+    const open = `https://www.google.com/maps?q=${encodeURIComponent(p.lat + "," + p.lng)}&z=16`;
+    const directions = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(BASE.lat + "," + BASE.lng)}&destination=${encodeURIComponent(p.lat + "," + p.lng)}`;
+    return { open, directions };
+  }
+
+  function popupHtml(p){
+    const dist = kmToBase(p).toFixed(1);
+    const { open, directions } = gmapsLinks(p);
+    return `
+      <div class="popup" style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; min-width:240px;">
+        <div style="font-weight:800; margin-bottom:6px;">${p.name}</div>
+        <div style="color:#666; font-size:12px; margin-bottom:8px;">${p.note || ""}</div>
+        <div style="font-size:12px; color:#666; margin-bottom:10px;">
+          Distance from hotel: <b>${dist} km</b> (straight-line)
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; font-size:12px;">
+          <a href="${open}" target="_blank" rel="noopener">Open map</a>
+          <a href="${directions}" target="_blank" rel="noopener">Directions</a>
+        </div>
+      </div>
+    `;
+  }
+
+  // UI + filtering
+  const qEl = document.getElementById("q");
+  const filtersEl = document.getElementById("filters");
+  const countEl = document.getElementById("count");
+  const baseCoordsEl = document.getElementById("baseCoords");
+  baseCoordsEl.textContent = `Hotel: ${BASE.lat.toFixed(5)}, ${BASE.lng.toFixed(5)}`;
+
+  const state = {
+    q: "",
+    enabledCats: new Set(CATEGORIES.map(c => c.id))
+  };
+
+  function renderFilters(){
+    filtersEl.innerHTML = "";
+    CATEGORIES.forEach(cat => {
+      const pill = document.createElement("label");
+      pill.className = "pill";
+      pill.title = `Toggle ${cat.label}`;
+      pill.innerHTML = `
+        <input type="checkbox" ${state.enabledCats.has(cat.id) ? "checked":""} data-cat="${cat.id}" />
+        <span>${cat.icon} ${cat.label}</span>
+      `;
+      filtersEl.appendChild(pill);
+    });
+
+    filtersEl.addEventListener("change", (e) => {
+      const cb = e.target;
+      if (!cb?.dataset?.cat) return;
+      const id = cb.dataset.cat;
+      cb.checked ? state.enabledCats.add(id) : state.enabledCats.delete(id);
+      refresh();
+    }, { once:true });
+  }
+
+  function matches(p){
+    if (!state.enabledCats.has(p.category)) return false;
+    const needle = state.q.trim().toLowerCase();
+    if (!needle) return true;
+    const hay = `${p.name} ${p.note || ""}`.toLowerCase();
+    return hay.includes(needle);
+  }
+
+  function rebuildMap(visible){
+    // Clear layers
+    for (const c of CATEGORIES) layers[c.id].clearLayers();
+
+    // Add markers
+    visible.forEach(p => {
+      const m = L.marker([p.lat, p.lng], { icon: iconByCat[p.category] });
+      m.bindPopup(popupHtml(p));
+      layers[p.category].addLayer(m);
+    });
+
+    countEl.textContent = `${visible.length} places shown`;
+
+    // Fit bounds including base + visible
+    const pts = [[BASE.lat, BASE.lng], ...visible.map(p => [p.lat, p.lng])];
+    if (pts.length > 1){
+      map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    } else {
+      map.setView([BASE.lat, BASE.lng], 13);
+    }
+  }
+
+  function refresh(){
+    const visible = PLACES.filter(matches);
+    rebuildMap(visible);
+  }
+
+  qEl.addEventListener("input", () => { state.q = qEl.value; refresh(); });
+
+  // Legend on map
+  const legend = L.control({ position: "bottomright" });
+  legend.onAdd = function(){
+    const div = L.DomUtil.create("div", "map-legend");
+    div.innerHTML = `<div style="font-weight:800;margin-bottom:6px;">Legend</div>` +
+      CATEGORIES.map(c => `
+        <div class="legend-row">
+          <span class="legend-dot" style="background:${c.color}"></span>
+          <span>${c.icon} ${c.label}</span>
+        </div>
+      `).join("");
+    L.DomEvent.disableClickPropagation(div);
+    return div;
+  };
+  legend.addTo(map);
+
+  // init
+  renderFilters();
+  refresh();
+</script>
+</body>
+</html>
